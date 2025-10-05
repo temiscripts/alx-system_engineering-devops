@@ -1,0 +1,350 @@
+# Distributed Web Infrastructure Design
+
+Diagram URL Link: [https://drive.google.com/file/d/1XmCot58sRvNF97NpRKWBrNT7M8s49h5p/view?usp=sharing](https://drive.google.com/file/d/1XmCot58sRvNF97NpRKWBrNT7M8s49h5p/view?usp=sharing)
+
+## Overview
+
+This document describes a three-server distributed web infrastructure that hosts the website [www.foobar.com](http://www.foobar.com) using load balancing, multiple servers, and database replication for improved reliability and performance.
+
+## Infrastructure Diagram
+
+```bash
+                    User's Computer
+                           |
+                           | (HTTPS/HTTP Request)
+                           |
+                           v
+                      Internet/DNS
+                           |
+                           | (DNS Resolution: www.foobar.com -> Load Balancer IP)
+                           |
+                           v
+            +----------------------------------+
+            |        Load Balancer Server       |
+            |          (HAproxy)                |
+            |        Public IP: 8.8.8.8        |
+            +----------------------------------+
+                           |
+                           | (Round Robin Distribution)
+                           |
+          +----------------+----------------+
+          |                                 |
+          v                                 v
++-------------------+              +-------------------+
+|   Web Server 1    |              |   Web Server 2    |
+|   (10.0.0.2)      |              |   (10.0.0.3)      |
+|                   |              |                   |
+| +---------------+ |              | +---------------+ |
+| |     Nginx     | |              | |     Nginx     | |
+| | (Port 80/443) | |              | | (Port 80/443) | |
+| +---------------+ |              | +---------------+ |
+|         |         |              |         |         |
+|         v         |              |         v         |
+| +---------------+ |              | +---------------+ |
+| | App Server    | |              | | App Server    | |
+| | (PHP-FPM)     | |              | | (PHP-FPM)     | |
+| +---------------+ |              | +---------------+ |
+|         |         |              |         |         |
+|         v         |              |         v         |
+| +---------------+ |              | +---------------+ |
+| | App Files     | |              | | App Files     | |
+| | (Code Base)   | |              | | (Code Base)   | |
+| +---------------+ |              | +---------------+ |
++-------------------+              +-------------------+
+          |                                 |
+          |                                 |
+          +----------------+----------------+
+                           |
+                           v
+            +----------------------------------+
+            |        Database Server           |
+            |         (10.0.0.4)              |
+            |                                  |
+            |  +---------------------------+   |
+            |  |    MySQL Primary         |   |
+            |  |    (Master)              |   |
+            |  |    (Port 3306)           |   |
+            |  +---------------------------+   |
+            |              |                   |
+            |              | (Replication)     |
+            |              v                   |
+            |  +---------------------------+   |
+            |  |    MySQL Replica          |   |
+            |  |    (Slave)               |   |
+            |  |    (Port 3307)           |   |
+            |  +---------------------------+   |
+            +----------------------------------+
+```
+
+## Infrastructure Components and Justifications
+
+### Additional Elements Added
+
+#### 1. Load Balancer Server (HAproxy)
+
+**Why Added**:
+
+- **Traffic Distribution**: Distributes incoming requests across multiple web servers
+- **High Availability**: If one web server fails, traffic automatically routes to healthy servers
+- **Scalability**: Enables horizontal scaling by adding more web servers
+- **Single Entry Point**: Provides a single IP address for external access
+- **Health Monitoring**: Monitors web server health and removes failed servers from rotation
+
+#### 2. Additional Web Server (Server 2)
+
+**Why Added**:
+
+- **Redundancy**: Eliminates single point of failure for web services
+- **Load Distribution**: Shares traffic load, improving response times
+- **Maintenance Capability**: Allows maintenance on one server while others serve traffic
+- **Increased Capacity**: Doubles the web serving capacity
+
+#### 3. Database Primary-Replica Setup
+
+**Why Added**:
+
+- **Data Redundancy**: Protects against data loss
+- **Read Scalability**: Distributes read operations across multiple database instances
+- **Backup Strategy**: Replica serves as a live backup
+- **Disaster Recovery**: Quick recovery from primary database failures
+
+## Load Balancer Configuration
+
+### Distribution Algorithm: Round Robin
+
+**How Round Robin Works**:
+
+1. **Sequential Distribution**: Requests are distributed sequentially to each server
+2. **Cycling Pattern**: After reaching the last server, it cycles back to the first
+3. **Equal Distribution**: Each server receives approximately equal number of requests
+4. **Simple Implementation**: Easy to implement and understand
+
+**Example Flow**:
+
+- Request 1 → Web Server 1
+- Request 2 → Web Server 2  
+- Request 3 → Web Server 1
+- Request 4 → Web Server 2
+- And so on...
+
+**Advantages**:
+
+- Simple and fair distribution
+- Works well when servers have similar capabilities
+- Low overhead for load balancer
+
+**Disadvantages**:
+
+- Doesn't consider server load or response times
+- May not be optimal if servers have different capabilities
+
+### Load Balancer Setup: Active-Active
+
+**Active-Active Configuration**:
+
+- **Definition**: All web servers actively handle requests simultaneously
+- **Traffic Distribution**: Load balancer distributes traffic among all healthy servers
+- **Resource Utilization**: Maximum utilization of available server resources
+- **Redundancy**: Multiple servers provide redundancy
+
+**Active-Passive Alternative**:
+
+- **Definition**: One server handles all traffic while others remain on standby
+- **Failover**: Standby servers activate only when primary server fails
+- **Resource Usage**: Standby servers remain idle until needed
+- **Cost**: Higher cost due to idle resources
+
+**Why Active-Active is Chosen**:
+
+- Better resource utilization
+- Higher performance and capacity
+- Cost-effective use of hardware
+- Improved user experience with distributed load
+
+## Database Primary-Replica Cluster
+
+### How Primary-Replica Works
+
+**Primary Node (Master)**:
+
+- **Write Operations**: Handles all INSERT, UPDATE, DELETE operations
+- **Read Operations**: Can handle read operations (SELECT)
+- **Replication Source**: Sends all changes to replica nodes
+- **Authority**: Authoritative source for all data
+- **Consistency**: Ensures data consistency and integrity
+
+**Replica Node (Slave)**:
+
+- **Read-Only Operations**: Primarily handles SELECT operations
+- **Data Synchronization**: Receives and applies changes from primary
+- **Backup Function**: Serves as live backup of primary data
+- **Promotion Capability**: Can be promoted to primary if original primary fails
+
+**Replication Process**:
+
+1. **Binary Logging**: Primary logs all changes in binary log
+2. **Log Transmission**: Replica requests and receives binary log entries
+3. **Relay Logging**: Replica writes received entries to relay log
+4. **Application**: Replica applies changes from relay log to its database
+5. **Synchronization**: Replica maintains synchronized copy of primary data
+
+### Application Database Interaction
+
+**Primary Node Usage**:
+
+- All write operations (user registrations, content updates, transactions)
+- Critical read operations requiring latest data
+- Administrative operations
+- Data modifications and schema changes
+
+**Replica Node Usage**:
+
+- Read-heavy operations (content display, search, reporting)
+- Analytics and reporting queries
+- Backup operations
+- Non-critical read operations
+
+**Application Configuration**:
+
+```php
+// Write operations go to primary
+$primaryDB = new PDO("mysql:host=10.0.0.4:3306", $user, $pass);
+
+// Read operations can go to replica
+$replicaDB = new PDO("mysql:host=10.0.0.4:3307", $user, $pass);
+```
+
+## Request Flow Process
+
+1. **User Request**: User types [www.foobar.com](http://www.foobar.com) in browser
+2. **DNS Resolution**: DNS resolves to load balancer IP (8.8.8.8)
+3. **Load Balancer**: HAproxy receives request and selects target server using round robin
+4. **Web Server**: Selected Nginx server receives and processes request
+5. **Application Processing**: PHP-FPM processes dynamic content
+6. **Database Query**:
+   - Write operations → Primary database
+   - Read operations → Replica database (or primary)
+7. **Response Generation**: Application generates response
+8. **Response Delivery**: Response travels back through load balancer to user
+
+## Infrastructure Issues
+
+### 1. Single Points of Failure (SPOF)
+
+**Load Balancer SPOF**:
+
+- **Issue**: If HAproxy fails, entire website becomes unavailable
+- **Impact**: Complete service outage despite healthy web servers
+- **Mitigation**: Implement load balancer clustering or failover
+
+**Database Primary SPOF**:
+
+- **Issue**: If primary database fails, no write operations possible
+- **Impact**: Website becomes read-only or completely non-functional
+- **Mitigation**: Automatic failover to replica or database clustering
+
+**Network SPOF**:
+
+- **Issue**: Single network connection to load balancer
+- **Impact**: Network failure affects entire infrastructure
+- **Mitigation**: Multiple network connections and ISP redundancy
+
+### 2. Security Issues
+
+**No Firewall Protection**:
+
+- **Issue**: All servers exposed without firewall filtering
+- **Vulnerabilities**:
+  - Direct access to web servers bypassing load balancer
+  - Database servers accessible from external networks
+  - No protection against malicious traffic
+  - No intrusion prevention
+
+**No HTTPS Encryption**:
+
+- **Issue**: All traffic transmitted in plain text
+- **Vulnerabilities**:
+  - Data interception and eavesdropping
+  - Man-in-the-middle attacks
+  - Credential theft
+  - SEO penalties and browser warnings
+  - Compliance issues (GDPR, PCI-DSS)
+
+**Additional Security Concerns**:
+
+- No authentication between internal services
+- No network segmentation
+- Default database credentials potentially used
+- No access logging or audit trails
+
+### 3. No Monitoring
+
+**Monitoring Gaps**:
+
+- **Server Health**: No visibility into server performance and availability
+- **Application Performance**: No tracking of response times or errors
+- **Database Performance**: No monitoring of database queries and performance
+- **Network Monitoring**: No network traffic or latency monitoring
+- **Security Monitoring**: No intrusion detection or security event logging
+
+**Impact of No Monitoring**:
+
+- **Delayed Issue Detection**: Problems discovered only when users complain
+- **Difficult Troubleshooting**: No historical data for problem analysis
+- **Performance Degradation**: No early warning of performance issues
+- **Security Breaches**: Undetected security incidents
+- **Capacity Planning**: No data for infrastructure scaling decisions
+
+## Recommendations for Improvement
+
+### Security Enhancements
+
+1. **Implement Firewalls**: Configure iptables/ufw on all servers
+2. **Add HTTPS**: Install SSL certificates and force HTTPS
+3. **Network Segmentation**: Isolate database servers in private network
+4. **Authentication**: Implement service-to-service authentication
+5. **Access Control**: Restrict database access to application servers only
+
+### High Availability Improvements
+
+1. **Load Balancer Redundancy**: Implement HAproxy clustering
+2. **Database Failover**: Configure automatic primary-replica failover
+3. **Multi-zone Deployment**: Deploy across multiple availability zones
+4. **Backup Strategies**: Implement automated backup systems
+
+### Monitoring Implementation
+
+1. **System Monitoring**: Deploy Nagios, Zabbix, or Prometheus
+2. **Application Monitoring**: Implement APM tools (New Relic, DataDog)
+3. **Log Aggregation**: Set up centralized logging (ELK stack)
+4. **Alerting**: Configure automated alerting for critical issues
+5. **Performance Monitoring**: Track key performance indicators
+
+## Technical Specifications
+
+### Load Balancer Server
+
+- **CPU**: 2 cores, 2.4 GHz
+- **RAM**: 4GB
+- **Storage**: 50GB SSD
+- **Software**: HAproxy 2.0+, Linux OS
+- **Network**: High-bandwidth network interface
+
+### Web Servers (2x)
+
+- **CPU**: 4 cores, 2.4 GHz each
+- **RAM**: 8GB each
+- **Storage**: 100GB SSD each
+- **Software**: Nginx 1.18+, PHP 7.4+, Linux OS
+- **Network**: Gigabit network interface
+
+### Database Server
+
+- **CPU**: 8 cores, 3.0 GHz
+- **RAM**: 16GB
+- **Storage**: 500GB SSD with RAID 10
+- **Software**: MySQL 8.0+, Linux OS
+- **Network**: Gigabit network interface
+- **Backup**: Additional storage for backups
+
+This distributed infrastructure design provides improved reliability, performance, and scalability compared to the single-server setup, while identifying key areas for further enhancement in security, monitoring, and high availability.

@@ -1,0 +1,178 @@
+# Simple Web Stack Infrastructure Design
+
+Diagram URL Link: [https://drive.google.com/file/d/1S25JuRTdt--hG4J-8irnRnWZ99mTAx2L/view?usp=sharing](https://drive.google.com/file/d/1S25JuRTdt--hG4J-8irnRnWZ99mTAx2L/view?usp=sharing)
+
+## Overview
+
+This document describes a one-server web infrastructure that hosts the website <https://www.foobar.com> using a LAMP stack architecture.
+
+## Infrastructure Diagram
+
+```bash
+User's Computer
+       |
+       | (HTTPS/HTTP Request)
+       |
+       v
+   Internet/DNS
+       |
+       | (DNS Resolution: www.foobar.com -> 8.8.8.8)
+       |
+       v
++----------------------------------+
+|         Server (8.8.8.8)         |
+|                                  |
+|  +---------------------------+   |
+|  |      Nginx Web Server     |   |
+|  |    (Port 80/443)          |   |
+|  +---------------------------+   |
+|              |                   |
+|              v                   |
+|  +---------------------------+   |
+|  |   Application Server      |   |
+|  |   (PHP/Python/Node.js)    |   |
+|  +---------------------------+   |
+|              |                   |
+|              v                   |
+|  +---------------------------+   |
+|  |     Application Files     |   |
+|  |      (Code Base)          |   |
+|  +---------------------------+   |
+|              |                   |
+|              v                   |
+|  +---------------------------+   |
+|  |      MySQL Database       |   |
+|  |       (Port 3306)         |   |
+|  +---------------------------+   |
++----------------------------------+
+```
+
+## Components Explanation
+
+### 1. What is a Server?
+
+A server is a computer system that provides services, resources, or data to other computers (clients) over a network. In our case, it's a single physical or virtual machine hosting all components of our web infrastructure.
+
+### 2. Role of the Domain Name
+
+The domain name (foobar.com) serves as a human-readable address that maps to the server's IP address (8.8.8.8). It allows users to access the website using memorable names instead of remembering numerical IP addresses.
+
+### 3. DNS Record Type for www
+
+The "www" in <https://www.foobar.com> is a subdomain that uses an **A record** (Address record) in DNS. This A record points the subdomain <https://www.foobar.com> to the server's IP address 8.8.8.8.
+
+### 4. Role of the Web Server (Nginx)
+
+The web server (Nginx) handles:
+
+- Receiving HTTP/HTTPS requests from users
+- Serving static content (CSS, JavaScript, images)
+- Acting as a reverse proxy to the application server
+- Managing SSL/TLS certificates
+- Load balancing (though not applicable in single-server setup)
+- Request routing and URL rewriting
+
+### 5. Role of the Application Server
+
+The application server:
+
+- Executes dynamic code (PHP, Python, Node.js, etc.)
+- Processes business logic
+- Generates dynamic content
+- Handles user sessions and authentication
+- Communicates with the database
+- Returns processed data to the web server
+
+### 6. Role of the Database (MySQL)
+
+The database:
+
+- Stores and manages application data
+- Handles data persistence
+- Manages user information, content, and application state
+- Provides data integrity and ACID properties
+- Supports complex queries and data relationships
+
+### 7. Server-User Communication Protocol
+
+The server communicates with the user's computer using:
+
+- **HTTP** (HyperText Transfer Protocol) on port 80
+- **HTTPS** (HTTP Secure) on port 443 for encrypted communication
+- **TCP/IP** as the underlying network protocol
+
+## Request Flow Process
+
+1. **User Request**: User types <http://www.foobar.com> in browser
+2. **DNS Resolution**: Browser queries DNS to resolve <http://www.foobar.com> to 8.8.8.8
+3. **HTTP Request**: Browser sends HTTP request to server at 8.8.8.8
+4. **Web Server Processing**: Nginx receives the request
+5. **Application Processing**: Nginx forwards dynamic requests to application server
+6. **Database Query**: Application server queries MySQL if data is needed
+7. **Response Generation**: Application server generates response
+8. **Response Delivery**: Nginx sends final response back to user's browser
+
+## Infrastructure Issues
+
+### 1. Single Point of Failure (SPOF)
+
+**Problem**: The entire infrastructure relies on one server. If the server fails, the entire website becomes unavailable.
+
+**Specific SPOFs**:
+
+- Hardware failure (CPU, RAM, storage)
+- Network connectivity issues
+- Operating system crashes
+- Any single component failure brings down the entire system
+
+### 2. Downtime During Maintenance
+
+**Problem**: Maintenance activities require server downtime.
+
+**Scenarios causing downtime**:
+
+- Deploying new application code
+- Web server restarts (Nginx configuration changes)
+- Database maintenance and updates
+- Operating system updates
+- Hardware maintenance
+
+### 3. Scalability Limitations
+
+**Problem**: Cannot handle high traffic loads effectively.
+
+**Limitations**:
+
+- Single server has limited CPU and memory resources
+- Database becomes a bottleneck under heavy load
+- No horizontal scaling capabilities
+- Network bandwidth limitations
+- Storage I/O constraints
+
+## Recommendations for Improvement
+
+1. **Eliminate SPOF**: Implement redundancy with multiple servers
+2. **Reduce Downtime**: Use blue-green deployments and rolling updates
+3. **Improve Scalability**: Implement load balancers and multiple application servers
+4. **Database Scaling**: Consider database clustering or read replicas
+5. **Monitoring**: Implement comprehensive monitoring and alerting systems
+
+## Technical Specifications
+
+### Server Requirements
+
+- **CPU**: Minimum 2 cores, 2.4 GHz
+- **RAM**: Minimum 4GB (8GB recommended)
+- **Storage**: SSD with at least 100GB
+- **Network**: Stable internet connection with sufficient bandwidth
+- **OS**: Linux (Ubuntu 20.04 LTS or CentOS 8)
+
+### Software Stack
+
+- **Web Server**: Nginx 1.18+
+- **Application Server**: PHP 7.4+ with PHP-FPM
+- **Database**: MySQL 8.0+
+- **Operating System**: Linux-based
+- **Additional Tools**: Git, SSL certificates, monitoring tools
+
+This infrastructure design provides a basic but functional web hosting solution suitable for small to medium websites with moderate traffic requirements.

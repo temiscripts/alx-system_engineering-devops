@@ -1,0 +1,644 @@
+# Scale Up Web Infrastructure Design
+
+Diagram URL Link: [Infrastructure Diagram](https://drive.google.com/file/d/1hqN8WCK8r_GW6g65O91J2DKuy6cm8qqc/view?usp=sharing)
+
+## Overview
+
+This document describes a scaled-up web infrastructure that hosts the website [www.foobar.com](https://www.foobar.com) with complete component separation and high availability load balancing using clustered HAproxy servers.
+
+## Infrastructure Diagram
+
+```bash
+                    User's Computer
+                           |
+                           | (HTTPS Request)
+                           |
+                           v
+                      Internet/DNS
+                           |
+                           | (DNS Resolution: www.foobar.com -> VIP: 8.8.8.8)
+                           |
+                           v
+            +----------------------------------+
+            |    🔧 Load Balancer Cluster      |
+            |     (HAproxy + Keepalived)       |
+            |                                  |
+            | +-------------+ +-------------+  |
+            | | LB Master   | | LB Backup   |  |
+            | | 10.0.0.10   | | 10.0.0.11   |  |
+            | | (Active)    | | (Standby)   |  |
+            | +-------------+ +-------------+  |
+            |                                  |
+            |    Virtual IP: 8.8.8.8          |
+            +----------------------------------+
+                           |
+                           | (Load Balanced Traffic)
+                           |
+          +----------------+----------------+
+          |                                 |
+          v                                 v
++-------------------+              +-------------------+
+|   🌐 Web Server 1 |              |   🌐 Web Server 2 |
+|    (10.0.0.20)    |              |    (10.0.0.21)    |
+|                   |              |                   |
+| +---------------+ |              | +---------------+ |
+| |     Nginx     | |              | |     Nginx     | |
+| | (Port 80/443) | |              | | (Port 80/443) | |
+| | Static Files  | |              | | Static Files  | |
+| +---------------+ |              | +---------------+ |
++-------------------+              +-------------------+
+          |                                 |
+          |        (Application Requests)   |
+          +----------------+----------------+
+                           |
+                           v
+            +----------------------------------+
+            |       🚀 Application Server      |
+            |         (10.0.0.30)             |
+            |                                  |
+            | +------------------------------+ |
+            | |          PHP-FPM             | |
+            | |      (Application Logic)     | |
+            | |       Business Logic         | |
+            | |      Session Management      | |
+            | +------------------------------+ |
+            +----------------------------------+
+                           |
+                           | (Database Queries)
+                           |
+                           v
+            +----------------------------------+
+            |      🗄️ Database Server         |
+            |        (10.0.0.40)              |
+            |                                  |
+            | +-------------+ +-------------+  |
+            | | MySQL       | | MySQL       |  |
+            | | Primary     | | Replica     |  |
+            | | (Port 3306) | | (Port 3307) |  |
+            | | Read/Write  | | Read Only   |  |
+            | +-------------+ +-------------+  |
+            +----------------------------------+
+```
+
+## Infrastructure Components
+
+### Added Components
+
+#### 🔧 Additional Server
+
+- **Purpose**: Dedicated application server for business logic
+- **Role**: Separates application processing from web serving
+- **Benefits**: Independent scaling and optimization
+
+#### ⚖️ Load Balancer Cluster
+
+- **Primary LB**: HAproxy Master (10.0.0.10)
+- **Secondary LB**: HAproxy Backup (10.0.0.11)
+- **High Availability**: Keepalived for automatic failover
+- **Virtual IP**: 8.8.8.8 (shared between both load balancers)
+
+#### 🏗️ Component Separation
+
+- **Web Servers**: Only handle HTTP requests and static content
+- **Application Server**: Only processes business logic and dynamic content
+- **Database Server**: Only handles data storage and retrieval
+
+## Detailed Component Analysis
+
+### 🆕 Why Add an Additional Server?
+
+**Purpose**: Dedicated Application Server
+
+**Benefits of Separation**:
+
+1. **Performance Optimization**:
+   - Web servers optimized for static content delivery
+   - Application server optimized for PHP processing
+   - Database server optimized for data operations
+   - Each component can be tuned independently
+
+2. **Resource Allocation**:
+   - Web servers: High network I/O, moderate CPU
+   - Application server: High CPU, moderate memory
+   - Database server: High memory, high disk I/O
+
+3. **Scalability**:
+   - Scale web servers for traffic spikes
+   - Scale application servers for processing load
+   - Scale database for data growth
+   - Independent scaling reduces costs
+
+4. **Security**:
+   - Reduced attack surface per server
+   - Better network segmentation
+   - Easier to secure individual components
+
+### ⚖️ Why Add Load Balancer Clustering?
+
+**Purpose**: Eliminate Load Balancer Single Point of Failure
+
+**HAproxy Cluster Benefits**:
+
+**High Availability**:
+
+- Automatic failover in case of primary LB failure
+- Zero downtime for load balancer maintenance
+- 99.99% availability for traffic distribution
+
+**Keepalived Implementation**:
+
+```bash
+# Master LB Configuration (10.0.0.10)
+vrrp_instance VI_1 {
+    state MASTER
+    interface eth0
+    virtual_router_id 51
+    priority 100
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass mypassword
+    }
+    virtual_ipaddress {
+        8.8.8.8
+    }
+}
+
+# Backup LB Configuration (10.0.0.11)
+vrrp_instance VI_1 {
+    state BACKUP
+    interface eth0
+    virtual_router_id 51
+    priority 90
+    advert_int 1
+    authentication {
+        auth_type PASS
+        auth_pass mypassword
+    }
+    virtual_ipaddress {
+        8.8.8.8
+    }
+}
+```
+
+**Failover Process**:
+
+```bash
+Normal Operation: VIP (8.8.8.8) → Master LB (10.0.0.10)
+Master Fails: VIP (8.8.8.8) → Backup LB (10.0.0.11)
+Recovery Time: < 3 seconds
+```
+
+### 🏗️ Why Separate Components?
+
+**Component Separation Benefits**:
+
+#### 🌐 Web Server Tier (Nginx Only)
+
+**Purpose**: Handle HTTP requests and serve static content
+
+**Optimizations**:
+
+```nginx
+# Nginx optimized for static content
+worker_processes auto;
+worker_connections 1024;
+
+server {
+    listen 80;
+    server_name www.foobar.com;
+    
+    # Static content handling
+    location ~* \.(jpg|jpeg|png|gif|css|js)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Dynamic content forwarding
+    location ~ \.php$ {
+        proxy_pass http://10.0.0.30:9000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+**Benefits**:
+
+- Fast static file serving
+- Efficient HTTP connection handling
+- SSL termination and compression
+- Request routing and load balancing
+
+#### 🚀 Application Server Tier (PHP-FPM Only)
+
+**Purpose**: Process business logic and dynamic content
+
+**Configuration**:
+
+```ini
+; PHP-FPM optimized for application processing
+[www]
+user = www-data
+group = www-data
+listen = 9000
+pm = dynamic
+pm.max_children = 50
+pm.start_servers = 10
+pm.min_spare_servers = 5
+pm.max_spare_servers = 20
+pm.max_requests = 500
+```
+
+**Benefits**:
+
+- Dedicated CPU for application processing
+- Optimized memory allocation for PHP
+- Independent scaling based on CPU load
+- Better error isolation and debugging
+
+#### 🗄️ Database Server Tier (MySQL Only)
+
+**Purpose**: Data storage, retrieval, and management
+
+**Configuration**:
+
+```cnf
+[mysqld]
+# Optimized for database operations
+innodb_buffer_pool_size = 2G
+innodb_log_file_size = 256M
+query_cache_size = 128M
+max_connections = 200
+```
+
+**Benefits**:
+
+- Maximum memory for database caching
+- Optimized disk I/O for database operations
+- Dedicated resources for query processing
+- Better backup and maintenance procedures
+
+## Architecture Comparison
+
+### Before (Task 1): Monolithic Servers
+
+```bash
+Load Balancer → Web Server 1 (Nginx + PHP + App Files)
+                Web Server 2 (Nginx + PHP + App Files)
+                      ↓
+                Database Server (MySQL)
+```
+
+**Issues**:
+
+- Resource competition between components
+- Difficult to scale individual tiers
+- Complex troubleshooting and maintenance
+- Single point of failure at load balancer
+
+### After (Task 3): Separated Architecture
+
+```bash
+LB Cluster → Web Servers (Nginx Only)
+                  ↓
+            Application Server (PHP-FPM Only)
+                  ↓
+            Database Server (MySQL Only)
+```
+
+**Improvements**:
+
+- ✅ Eliminated load balancer SPOF
+- ✅ Independent component scaling
+- ✅ Optimized resource allocation
+- ✅ Better security isolation
+- ✅ Easier maintenance and updates
+
+## Detailed Technical Specifications
+
+### Load Balancer Cluster Configuration
+
+**HAproxy Configuration (Both LBs)**:
+
+```bash
+global
+    daemon
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660
+    stats timeout 30s
+    user haproxy
+    group haproxy
+
+defaults
+    mode http
+    timeout connect 5000ms
+    timeout client 50000ms
+    timeout server 50000ms
+    option httplog
+
+frontend web_frontend
+    bind *:80
+    bind *:443 ssl crt /etc/haproxy/certs/
+    redirect scheme https if !{ ssl_fc }
+    default_backend web_servers
+
+backend web_servers
+    balance roundrobin
+    option httpchk GET /health
+    server web1 10.0.0.20:80 check
+    server web2 10.0.0.21:80 check
+
+listen stats
+    bind *:8404
+    stats enable
+    stats uri /stats
+    stats refresh 30s
+```
+
+### Web Server Configuration
+
+**Nginx Configuration**:
+
+```nginx
+upstream app_server {
+    server 10.0.0.30:9000;
+    keepalive 32;
+}
+
+server {
+    listen 80;
+    server_name www.foobar.com;
+    root /var/www/html;
+    index index.php index.html;
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+    # Static content
+    location ~* \.(css|js|jpg|jpeg|png|gif|ico|svg)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Served-By "Web-Server";
+    }
+
+    # PHP processing
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass app_server;
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+    }
+}
+```
+
+### Application Server Configuration
+
+**PHP-FPM Configuration**:
+
+```ini
+[global]
+pid = /run/php/php7.4-fpm.pid
+error_log = /var/log/php7.4-fpm.log
+daemonize = yes
+
+[www]
+user = www-data
+group = www-data
+listen = 9000
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+
+pm = dynamic
+pm.max_children = 50
+pm.start_servers = 10
+pm.min_spare_servers = 5
+pm.max_spare_servers = 20
+pm.max_requests = 1000
+
+; Application-specific settings
+php_admin_value[error_log] = /var/log/php-errors.log
+php_admin_flag[log_errors] = on
+php_value[session.save_handler] = files
+php_value[session.save_path] = /var/lib/php/sessions
+```
+
+## Performance and Scalability Analysis
+
+### Resource Allocation Optimization
+
+**Load Balancer Cluster**:
+
+- CPU: 2 cores per LB (low processing overhead)
+- RAM: 2GB per LB (connection state management)
+- Network: High bandwidth (traffic distribution)
+
+**Web Servers**:
+
+- CPU: 4 cores (HTTP processing and static files)
+- RAM: 4GB (file caching and connections)
+- Storage: SSD (fast static file access)
+
+**Application Server**:
+
+- CPU: 8 cores (intensive PHP processing)
+- RAM: 8GB (application memory and session storage)
+- Storage: Standard (application files only)
+
+**Database Server**:
+
+- CPU: 8 cores (query processing)
+- RAM: 16GB (database buffer pool)
+- Storage: High-performance SSD (database I/O)
+
+### Scaling Strategies
+
+#### Horizontal Scaling Options
+
+**Web Server Scaling**:
+
+```bash
+Current: 2 Web Servers
+Scale to: 4-6 Web Servers
+Trigger: High HTTP request volume
+Implementation: Add servers to HAproxy backend
+```
+
+**Application Server Scaling**:
+
+```bash
+Current: 1 Application Server
+Scale to: 2-3 Application Servers
+Trigger: High CPU usage on app processing
+Implementation: Load balance between app servers
+```
+
+**Database Scaling**:
+
+```bash
+Current: 1 Primary + 1 Replica
+Scale to: 1 Primary + 2-3 Read Replicas
+Trigger: High database read operations
+Implementation: Read/write splitting
+```
+
+#### Vertical Scaling Options
+
+1. **Increase server resources when horizontal scaling isn't optimal**
+2. **Upgrade to faster CPUs for compute-intensive applications**
+3. **Add more RAM for database buffer pools and application caching**
+
+### Performance Monitoring
+
+**Key Performance Indicators (KPIs)**:
+
+1. **Load Balancer Metrics**:
+   - Request distribution ratio
+   - Failover frequency and duration
+   - SSL handshake performance
+
+2. **Web Server Metrics**:
+   - Static file response times
+   - Connection pool utilization
+   - Cache hit ratios
+
+3. **Application Server Metrics**:
+   - PHP-FPM process utilization
+   - Application response times
+   - Memory usage patterns
+
+4. **Database Metrics**:
+   - Query execution times
+   - Replication lag
+   - Connection pool usage
+
+## Security Enhancements
+
+### Network Security
+
+**Firewall Rules by Tier**:
+
+```bash
+# Load Balancer Tier
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_NETWORK -j ACCEPT
+
+# Web Server Tier
+iptables -A INPUT -p tcp --dport 80 -s 10.0.0.10,10.0.0.11 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_NETWORK -j ACCEPT
+
+# Application Server Tier
+iptables -A INPUT -p tcp --dport 9000 -s 10.0.0.20,10.0.0.21 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_NETWORK -j ACCEPT
+
+# Database Server Tier
+iptables -A INPUT -p tcp --dport 3306 -s 10.0.0.30 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_NETWORK -j ACCEPT
+```
+
+### Application Security
+
+**Security Headers**:
+
+```nginx
+add_header X-Frame-Options DENY;
+add_header X-Content-Type-Options nosniff;
+add_header X-XSS-Protection "1; mode=block";
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains";
+add_header Content-Security-Policy "default-src 'self'";
+```
+
+## Disaster Recovery and Backup
+
+### Backup Strategy
+
+1. **Database Backups**:
+   - Daily full backups
+   - Hourly incremental backups
+   - Point-in-time recovery capability
+
+2. **Application Backups**:
+   - Code repository synchronization
+   - Configuration file backups
+   - User-uploaded content backups
+
+3. **Infrastructure Backups**:
+   - Server configuration snapshots
+   - Load balancer configurations
+   - SSL certificates and keys
+
+### Recovery Procedures
+
+1. **Load Balancer Failure**: Automatic failover via Keepalived
+2. **Web Server Failure**: Remove from load balancer pool
+3. **Application Server Failure**: Deploy new server from backup
+4. **Database Failure**: Promote replica to primary
+
+## Cost Analysis
+
+### Infrastructure Costs (Monthly)
+
+**Before (Task 1)**:
+
+- 1 Load Balancer: $50
+- 2 Web/App Servers: $200 (over-provisioned)
+- 1 Database Server: $150
+- **Total**: $400/month
+
+**After (Task 3)**:
+
+- 2 Load Balancers: $80
+- 2 Web Servers: $120 (optimized)
+- 1 Application Server: $100 (optimized)
+- 1 Database Server: $150
+- **Total**: $450/month
+
+**Additional Benefits**:
+
+- Better performance per dollar
+- Reduced maintenance complexity
+- Higher availability (99.99% vs 99.9%)
+- Independent scaling reduces future costs
+
+## Implementation Roadmap
+
+### Phase 1: Load Balancer Clustering
+
+1. Set up second load balancer
+2. Configure Keepalived
+3. Test failover scenarios
+4. Update DNS if needed
+
+### Phase 2: Component Separation
+
+1. Deploy dedicated application server
+2. Configure PHP-FPM on application server
+3. Update web servers to proxy PHP requests
+4. Test application functionality
+
+### Phase 3: Optimization
+
+1. Fine-tune each component
+2. Implement monitoring
+3. Performance testing
+4. Documentation updates
+
+### Phase 4: Monitoring and Maintenance
+
+1. Set up comprehensive monitoring
+2. Create runbooks for common issues
+3. Establish backup procedures
+4. Regular security updates
+
+**Repository**: alx-system_engineering-devops  
+**Directory**: 0x09-web_infrastructure_design  
+**File**: 3-scale_up

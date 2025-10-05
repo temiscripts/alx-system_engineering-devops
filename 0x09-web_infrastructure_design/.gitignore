@@ -1,0 +1,129 @@
+# Python Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python Cache Files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+log/
+
+# Temporary Files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup Files
+*.bak
+*.backup
+*.old
+
+# Security and Sensitive Files
+*.key
+*.pem
+*.crt
+*.p12
+.env
+.env.local
+.env.*.local
+secrets.txt
+config.local.*
+
+# Optional: Large Generated Diagrams (uncomment if diagrams are too large)
+# *.png
+# *.jpg
+# *.jpeg
+# *.svg
+
+# Optional: Generated Documentation (uncomment if auto-generated)
+# docs/_build/
+# site/
+
+# Node.js (if any JavaScript tools are added later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Ruby (if any Ruby tools are added later)
+*.gem
+.bundle/
+vendor/
+
+# Local configuration overrides
+*.local
+local.*

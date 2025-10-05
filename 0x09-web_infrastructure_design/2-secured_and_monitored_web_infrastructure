@@ -1,0 +1,446 @@
+# Secured and Monitored Web Infrastructure Design
+
+Diagram URL Link: [Infrastructure Diagram](https://drive.google.com/file/d/1F_JWWlh9oh-11kT42_GvoA6DmZqb5HKK/view?usp=sharing)
+
+## Overview
+
+This document describes a three-server secured and monitored web infrastructure that hosts the website [www.foobar.com](https://www.foobar.com) with enhanced security through firewalls, SSL encryption, and comprehensive monitoring capabilities.
+
+## Infrastructure Diagram
+
+```bash
+                    User's Computer
+                           |
+                           | (HTTPS Request - Port 443)
+                           |
+                           v
+                      Internet/DNS
+                           |
+                           | (DNS Resolution: www.foobar.com -> Load Balancer IP)
+                           |
+                           v
+            +----------------------------------+
+            |     🔒 Firewall 1 (Public)      |
+            |    (iptables/UFW - DMZ)         |
+            +----------------------------------+
+                           |
+                           | (Filtered Traffic)
+                           |
+                           v
+            +----------------------------------+
+            |      🔧 Load Balancer Server     |
+            |        (HAproxy + SSL)           |
+            |      Public IP: 8.8.8.8          |
+            |                                  |
+            | 📜 SSL Certificate               |
+            | 📊 Monitoring Client (Sumo)     |
+            +----------------------------------+
+                           |
+                           | (HTTPS Termination → HTTP Internal)
+                           |
+          +----------------+----------------+
+          |                                 |
+          v                                 v
++-------------------+              +-------------------+
+|  🔒 Firewall 2   |              |  🔒 Firewall 3   |
+| (Private Network) |              | (Private Network) |
++-------------------+              +-------------------+
+          |                                 |
+          v                                 v
++-------------------+              +-------------------+
+|   Web Server 1    |              |   Web Server 2    |
+|   (10.0.0.2)      |              |   (10.0.0.3)      |
+|                   |              |                   |
+| +---------------+ |              | +---------------+ |
+| |     Nginx     | |              | |     Nginx     | |
+| | (Port 80)     | |              | | (Port 80)     | |
+| +---------------+ |              | +---------------+ |
+|         |         |              |         |         |
+|         v         |              |         v         |
+| +---------------+ |              | +---------------+ |
+| | App Server    | |              | | App Server    | |
+| | (PHP-FPM)     | |              | | (PHP-FPM)     | |
+| +---------------+ |              | +---------------+ |
+|         |         |              |         |         |
+|         v         |              |         v         |
+| +---------------+ |              | +---------------+ |
+| | App Files     | |              | | App Files     | |
+| | (Code Base)   | |              | | (Code Base)   | |
+| +---------------+ |              | +---------------+ |
+|         |         |              |         |         |
+|         v         |              |         v         |
+| 📊 Monitoring    |              | 📊 Monitoring    |
+| Client (Sumo)    |              | Client (Sumo)    |
++-------------------+              +-------------------+
+          |                                 |
+          |        (Database Connections)   |
+          +----------------+----------------+
+                           |
+                           v
+                +-------------------+
+                |   Database Server  |
+                |    (10.0.0.4)     |
+                |                   |
+                | +---------------+ |
+                | | MySQL Primary | |
+                | | (Port 3306)   | |
+                | +---------------+ |
+                |         |         |
+                |         v         |
+                | +---------------+ |
+                | | MySQL Replica | |
+                | | (Port 3307)   | |
+                | +---------------+ |
+                |         |         |
+                | 📊 Monitoring    |
+                | Client (Sumo)    |
+                +-------------------+
+```
+
+## Infrastructure Components
+
+### Security Layer
+
+- **3 Firewalls**:
+  - Firewall 1: Public-facing firewall (DMZ protection)
+  - Firewall 2: Web Server 1 protection (private network)
+  - Firewall 3: Web Server 2 protection (private network)
+
+### SSL/TLS Encryption
+
+- **1 SSL Certificate**: Wildcard or SAN certificate for [www.foobar.com](https://www.foobar.com)
+- **HTTPS Termination**: SSL termination at load balancer level
+
+### Monitoring Infrastructure
+
+- **3 Monitoring Clients**: Sumo Logic agents on all servers
+- **Data Collection**: Real-time metrics, logs, and performance data
+- **Alerting**: Automated notifications for issues and thresholds
+
+## Detailed Component Explanations
+
+### 🔒 Why Add Firewalls?
+
+**Purpose**: Network security and access control
+
+**Firewall 1 (Public DMZ)**:
+
+- Filters incoming internet traffic
+- Blocks malicious requests and unauthorized access
+- Only allows HTTP (80) and HTTPS (443) traffic
+- Protects against DDoS and brute force attacks
+
+**Firewalls 2 & 3 (Private Network)**:
+
+- Segment internal network traffic
+- Control access between web servers and database
+- Prevent lateral movement in case of compromise
+- Allow only necessary ports (80, 443, 3306, 22)
+
+**Configuration Example**:
+
+```bash
+# Public Firewall (Firewall 1)
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_IP -j ACCEPT
+iptables -A INPUT -j DROP
+
+# Private Firewalls (Firewalls 2 & 3)
+iptables -A INPUT -p tcp --dport 80 -s 8.8.8.8 -j ACCEPT
+iptables -A INPUT -p tcp --dport 3306 -s 10.0.0.0/24 -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -s ADMIN_IP -j ACCEPT
+iptables -A INPUT -j DROP
+```
+
+### 🔐 Why Serve Traffic Over HTTPS?
+
+**Security Benefits**:
+
+- **Data Encryption**: All data encrypted in transit using TLS 1.3
+- **Authentication**: Verifies server identity to prevent man-in-the-middle attacks
+- **Data Integrity**: Prevents data tampering during transmission
+- **SEO Benefits**: Google ranking boost for HTTPS sites
+- **User Trust**: Green lock icon builds user confidence
+- **Compliance**: Required for PCI DSS, GDPR, and other regulations
+
+**SSL Certificate Details**:
+
+- **Type**: Domain Validated (DV) or Extended Validation (EV)
+- **Encryption**: 2048-bit RSA or 256-bit ECC
+- **Protocol**: TLS 1.3 with Forward Secrecy
+- **Installation**: Installed on HAproxy load balancer
+
+### 📊 What is Monitoring Used For?
+
+**Purpose**: Proactive infrastructure management and issue detection
+
+**Key Monitoring Areas**:
+
+1. **Performance Metrics**:
+   - CPU usage, memory consumption, disk I/O
+   - Network traffic and bandwidth utilization
+   - Response times and throughput
+
+2. **Application Monitoring**:
+   - Web server response codes (200, 404, 500)
+   - Database query performance
+   - Application error rates
+
+3. **Security Monitoring**:
+   - Failed login attempts
+   - Suspicious network activity
+   - SSL certificate expiration
+
+4. **Infrastructure Health**:
+   - Server uptime and availability
+   - Load balancer health checks
+   - Database replication status
+
+### 📡 How Monitoring Tool Collects Data
+
+**Sumo Logic Agent Architecture**:
+
+**Data Collection Methods**:
+
+1. **Log Files**: Tails and parses log files in real-time
+2. **Metrics API**: Collects system metrics via REST APIs
+3. **Custom Scripts**: Executes custom monitoring scripts
+4. **SNMP**: Simple Network Management Protocol for network devices
+
+**Collection Process**:
+
+```bash
+# Sumo Logic Collector Configuration
+[collector]
+name = web-infrastructure-collector
+category = production/web-servers
+
+[source]
+name = nginx-access-logs
+category = nginx/access
+pathExpression = /var/log/nginx/access.log
+
+[source]
+name = system-metrics
+category = system/metrics
+interval = 60s
+```
+
+**Data Flow**:
+
+```bash
+Server → Sumo Agent → Secure HTTPS → Sumo Cloud → Dashboard/Alerts
+```
+
+### 🔍 Monitoring Web Server QPS (Queries Per Second)
+
+**To Monitor QPS**:
+
+**Configure Nginx Logging**:
+
+```nginx
+log_format qps_format '$remote_addr - $remote_user [$time_local] '
+                      '"$request" $status $body_bytes_sent '
+                      '"$http_referer" "$http_user_agent" '
+                      '$request_time';
+
+access_log /var/log/nginx/qps.log qps_format;
+```
+
+**Sumo Logic Query**:
+
+```sql
+_sourceCategory=nginx/access
+| parse "* - * [*] \"* * *\" * * \"*\" \"*\" *" as ip, user, timestamp, method, url, protocol, status, bytes, referer, user_agent, response_time
+| where method != ""
+| timeslice 1s
+| count by _timeslice
+| rename _count as qps
+| sort by _timeslice
+```
+
+**Set Up Alerts**:
+
+```yaml
+alert:
+  name: "High QPS Alert"
+  condition: "qps > 1000"
+  notification: "email, slack"
+  threshold_window: "5 minutes"
+```
+
+**Dashboard Creation**:
+
+- Real-time QPS graph
+- Peak hours analysis
+- QPS trends over time
+- Comparative analysis between servers
+
+## Infrastructure Issues and Limitations
+
+### ⚠️ Issue 1: SSL Termination at Load Balancer
+
+**Problem**: Terminating SSL at the load balancer level
+
+**Why This is an Issue**:
+
+- **Unencrypted Internal Traffic**: Traffic between load balancer and web servers is HTTP (unencrypted)
+- **Compliance Risk**: May not meet strict security compliance requirements
+- **Internal Eavesdropping**: Network sniffing between internal components possible
+- **Regulatory Issues**: Some industries require end-to-end encryption
+
+**Security Implications**:
+
+```bash
+User → [HTTPS] → Load Balancer → [HTTP] → Web Servers
+       ✅ Encrypted        ❌ Unencrypted
+```
+
+**Solutions**:
+
+1. **End-to-End SSL**: Implement SSL between load balancer and web servers
+2. **Network Isolation**: Use VPN or private networks for internal traffic
+3. **Internal Certificates**: Deploy internal SSL certificates
+4. **SSL Pass-through**: Configure load balancer for SSL pass-through mode
+
+### ⚠️ Issue 2: Single MySQL Write Server
+
+**Problem**: Only one MySQL server capable of accepting writes
+
+**Why This is an Issue**:
+
+- **Single Point of Failure**: Primary database failure = complete write outage
+- **Write Bottleneck**: All write operations limited to one server
+- **Scalability Limitation**: Cannot scale write operations horizontally
+- **Recovery Time**: Manual failover required, causing downtime
+
+**Impact Analysis**:
+
+```bash
+Primary DB Fails → No Writes Possible → Application Errors → Revenue Loss
+```
+
+**Solutions**:
+
+1. **Multi-Master Setup**: Configure MySQL multi-master replication
+2. **Auto-Failover**: Implement automatic failover with tools like MHA
+3. **Database Clustering**: Use MySQL Cluster or Galera Cluster
+4. **Load Balancer for DB**: Use ProxySQL for database load balancing
+
+### ⚠️ Issue 3: Servers with All Same Components
+
+**Problem**: Having servers with all the same components (database, web server, application server)
+
+**Why This Might Be a Problem**:
+
+**Resource Competition**:
+
+- **CPU Contention**: Web server, app server, and database competing for CPU
+- **Memory Pressure**: All services sharing limited RAM
+- **I/O Bottlenecks**: Database writes competing with web server file operations
+- **Network Congestion**: All services sharing network bandwidth
+
+**Scalability Issues**:
+
+- **Inflexible Scaling**: Cannot scale individual components independently
+- **Resource Waste**: Over-provisioning for one component affects others
+- **Performance Degradation**: One heavy service affects all others
+
+**Maintenance Complexity**:
+
+- **Service Dependencies**: Upgrading one service may affect others
+- **Debugging Difficulty**: Hard to isolate performance issues
+- **Security Risk**: Compromise of one service affects all components
+
+**Solution - Component Separation**:
+
+```bash
+Load Balancer → Web Servers (Nginx only)
+                     ↓
+              Application Servers (PHP-FPM only)
+                     ↓
+              Database Servers (MySQL only)
+```
+
+## Security Best Practices Implemented
+
+### Network Security
+
+- **Firewall Rules**: Strict ingress/egress filtering
+- **Network Segmentation**: Separate subnets for different tiers
+- **VPN Access**: Secure administrative access
+- **DDoS Protection**: Rate limiting and traffic filtering
+
+### Application Security
+
+- **SSL/TLS**: Strong encryption for all external communications
+- **Security Headers**: HSTS, CSP, X-Frame-Options implementation
+- **Input Validation**: SQL injection and XSS prevention
+- **Authentication**: Strong password policies and 2FA
+
+### Monitoring Security
+
+- **Log Analysis**: Real-time security event monitoring
+- **Intrusion Detection**: Automated threat detection
+- **Compliance Monitoring**: Regulatory compliance tracking
+- **Incident Response**: Automated alerting and response procedures
+
+## Implementation Requirements
+
+### SSL Certificate Setup
+
+```bash
+# Install SSL certificate on HAproxy
+cat > /etc/haproxy/certs/foobar.com.pem << EOF
+-----BEGIN CERTIFICATE-----
+[Certificate Content]
+-----END CERTIFICATE-----
+-----BEGIN PRIVATE KEY-----
+[Private Key Content]
+-----END PRIVATE KEY-----
+EOF
+
+chmod 600 /etc/haproxy/certs/foobar.com.pem
+```
+
+### Firewall Configuration
+
+```bash
+# Configure UFW on each server
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
+```
+
+### Monitoring Agent Installation
+
+```bash
+# Install Sumo Logic collector
+wget https://collectors.sumologic.com/rest/download/linux/64
+sudo dpkg -i sumocollector_19.361-15_amd64.deb
+
+# Configure collector
+sudo /opt/SumoCollector/config/user.properties
+```
+
+## Performance and Capacity Planning
+
+### Expected Performance Improvements
+
+- **Security Overhead**: 5-10% performance impact from SSL/firewalls
+- **Monitoring Overhead**: 2-5% resource usage for monitoring agents
+- **Overall Availability**: 99.9% uptime with proper monitoring and alerting
+
+### Scalability Considerations
+
+- **SSL Performance**: Hardware SSL acceleration may be needed
+- **Monitoring Scale**: Adjust monitoring frequency based on load
+- **Firewall Performance**: Optimize rules for high-traffic scenarios
+
+**Repository**: alx-system_engineering-devops  
+**Directory**: 0x09-web_infrastructure_design  
+**File**: 2-secured_and_monitored_web_infrastructure
